@@ -13,7 +13,7 @@ export async function POST(
     const body = await req.json();
 
     const { name, description, price, categoryId, colorId, sizeId, images, isFeatured, isArchived } = body;
-
+    
     if (!userId) {
       return new NextResponse("Unauthenticated", { status: 403 });
     }
@@ -21,8 +21,9 @@ export async function POST(
     if (!name) {
       return new NextResponse("Name is required", { status: 400 });
     }
+    
     if (!description) {
-      return new NextResponse("description is required", { status: 400 });
+      return new NextResponse("Description is required", { status: 400 });
     }
 
     if (!images || !images.length) {
