@@ -1,3 +1,4 @@
+// api\[storeId]\products\[productId]\route.ts
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs";
 
@@ -5,13 +6,9 @@ import prismadb from "@/lib/prismadb";
 
 export async function GET(
   req: Request,
-  { params }: { params: { productId: string } }
+  { params }: { params: { productId: string } },
 ) {
   try {
-    if (!params.productId) {
-      return new NextResponse("Product id is required", { status: 400 });
-    }
-
     const product = await prismadb.product.findUnique({
       where: {
         id: params.productId
@@ -19,11 +16,9 @@ export async function GET(
       include: {
         images: true,
         category: true,
-        size: true,
-        color: true,
       }
     });
-  
+
     return NextResponse.json(product);
   } catch (error) {
     console.log('[PRODUCT_GET]', error);
@@ -57,12 +52,37 @@ export async function DELETE(
       return new NextResponse("Unauthorized", { status: 405 });
     }
 
-    const product = await prismadb.product.delete({
+    const product = await prismadb.product.findUnique({
       where: {
-        id: params.productId
+        id: params.productId,
+      },
+      include: {
+        variants: true, // Include associated variants
       },
     });
-  
+
+    if (!product) {
+      return new NextResponse("Product not found", { status: 404 });
+    }
+
+    // Delete associated variants
+    if (product.variants && product.variants.length > 0) {
+      for (const variant of product.variants) {
+        await prismadb.productVariant.delete({
+          where: {
+            id: variant.id,
+          },
+        });
+      }
+    }
+
+    // Delete the product itself
+    await prismadb.product.delete({
+      where: {
+        id: params.productId,
+      },
+    });
+
     return NextResponse.json(product);
   } catch (error) {
     console.log('[PRODUCT_DELETE]', error);
@@ -80,7 +100,7 @@ export async function PATCH(
 
     const body = await req.json();
 
-    const { name, price, categoryId, images, colorId, sizeId, isFeatured, isArchived } = body;
+    const { name, price, categoryId, images, colorId, sizeId, isFeatured, isArchived, variants } = body;
 
     if (!userId) {
       return new NextResponse("Unauthenticated", { status: 403 });
@@ -133,8 +153,6 @@ export async function PATCH(
         name,
         price,
         categoryId,
-        colorId,
-        sizeId,
         images: {
           deleteMany: {},
         },
@@ -143,7 +161,7 @@ export async function PATCH(
       },
     });
 
-    const product = await prismadb.product.update({
+    const updatedProduct = await prismadb.product.update({
       where: {
         id: params.productId
       },
@@ -155,10 +173,18 @@ export async function PATCH(
             ],
           },
         },
+        variants: {
+          createMany: {
+            data: variants, // Use the array of product variants from the body
+          },
+        },
       },
-    })
+      include: {
+        variants: true, // Include associated variants
+      },
+    });
   
-    return NextResponse.json(product);
+    return NextResponse.json(updatedProduct);
   } catch (error) {
     console.log('[PRODUCT_PATCH]', error);
     return new NextResponse("Internal error", { status: 500 });
